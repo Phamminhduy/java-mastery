@@ -379,4 +379,251 @@ log.debug("Processing record " + record.getId() + " payload=" + toJson(record));
     exp: '`spring-boot-dependencies` quản lý phiên bản tương thích của hàng trăm thư viện. Ghi đè từng artifact dễ gây "dependency hell". Dùng `mvn dependency:tree` để kiểm tra, và ưu tiên cơ chế property/BOM mà Spring Boot hỗ trợ.',
     tags: ['starter', 'bom', 'dependency-management'], sec: 50,
   },
+  {
+    id: 'SB-031', topic: 'ApplicationContext', d: 'a', cat: 'debug',
+    q: 'Code khởi động cache dùng `@EventListener(ContextRefreshedEvent.class)` và thấy dữ liệu bị nạp **hai lần** khi ứng dụng có thêm một child context (ví dụ do thư viện/Spring Cloud tạo). Event nào phù hợp hơn để chạy một lần khi ứng dụng đã sẵn sàng?',
+    opts: [
+      'ContextClosedEvent',
+      '`ApplicationReadyEvent` — phát một lần bởi SpringApplication sau khi context refresh và các runner chạy xong; ContextRefreshedEvent phát cho **mỗi context** được refresh (kể cả context con và mỗi lần refresh)',
+      'ApplicationStartingEvent',
+      'Không có cách nào, phải dùng biến static để chặn lần hai',
+    ], ans: 'B',
+    exp: 'ContextRefreshedEvent là event của Spring Framework cho từng ApplicationContext; trong hệ phân cấp context, listener ở context cha có thể nhận event của context con. ApplicationReadyEvent là event vòng đời của Spring Boot cho toàn ứng dụng, đồng thời gắn với trạng thái readiness.',
+    tags: ['applicationreadyevent', 'contextrefreshedevent'], sec: 50,
+  },
+  {
+    id: 'SB-032', topic: 'ApplicationContext', d: 'i', cat: 'design',
+    q: 'Một class tiện ích static được viết để lấy bean ở bất cứ đâu: `SpringContext.getBean(OrderService.class)` (lưu ApplicationContext vào biến static qua `ApplicationContextAware`). Đánh giá?',
+    opts: [
+      'Thực hành tốt vì tiện lợi',
+      'Đây là anti-pattern **Service Locator**: che giấu dependency, khó test, phụ thuộc thứ tự khởi tạo (gọi trước khi context sẵn sàng → null), hỏng khi có nhiều context (test). Ưu tiên dependency injection qua constructor; chỉ dùng ở biên tích hợp với code không do Spring quản lý',
+      'Bắt buộc phải dùng để lấy bean prototype',
+      'Nhanh hơn constructor injection',
+    ], ans: 'B',
+    exp: 'Nếu cần lấy bean động (theo tên, prototype), inject `ObjectProvider` hoặc `Map<String, T>` thay vì tra cứu context toàn cục.',
+    tags: ['service-locator', 'applicationcontextaware'], sec: 40,
+  },
+  {
+    id: 'SB-033', topic: 'application.properties và application.yml', d: 'b', cat: 'theory',
+    q: 'Cấu hình dạng properties `app.allowed-origins[0]=https://a.com` và `app.allowed-origins[1]=https://b.com` tương đương với YAML nào?',
+    lang: 'yaml', code: `
+# (1)
+app:
+  allowed-origins: https://a.com, https://b.com
+# (2)
+app:
+  allowed-origins:
+    - https://a.com
+    - https://b.com
+# (3)
+app.allowed-origins:
+  0: https://a.com`,
+    opts: ['(1)', '(2)', '(3)', 'Không có cách biểu diễn list trong YAML'], ans: 'B', fixed: true,
+    exp: 'YAML biểu diễn list bằng dấu `-` với thụt lề nhất quán (dùng dấu cách, không dùng tab). Lưu ý: Spring Boot cũng chuyển chuỗi phân tách bằng dấu phẩy thành List khi binding vào `List<String>`, nhưng (2) mới là cú pháp list YAML chuẩn và tương đương trực tiếp với dạng chỉ số.',
+    tags: ['yaml', 'list', 'configuration'], sec: 35,
+  },
+  {
+    id: 'SB-034', topic: 'application.properties và application.yml', d: 'i', cat: 'theory',
+    q: 'Thư mục `src/main/resources` chứa **cả** `application.properties` (có `server.port=8081`) và `application.yml` (có `server.port: 8082`). Ứng dụng chạy cổng nào?',
+    opts: ['8082', '8081 — khi cả hai định dạng cùng vị trí, file `.properties` được ưu tiên', 'Lỗi xung đột cấu hình', 'Ngẫu nhiên theo thứ tự đọc file'], ans: 'B',
+    exp: 'Tài liệu Spring Boot: nếu có cả .properties và YAML ở cùng một vị trí, .properties có độ ưu tiên cao hơn. Thực tế nên chỉ dùng một định dạng trong dự án để tránh nhầm lẫn.',
+    tags: ['properties', 'yaml', 'precedence'], sec: 30,
+  },
+  {
+    id: 'SB-035', topic: 'Profiles', d: 'a', cat: 'debug',
+    q: 'File `application-dev.yml` chứa `spring.profiles.active: local` (để "kích hoạt thêm" profile local khi chạy dev). Từ Spring Boot 2.4, ứng dụng báo lỗi `InvalidConfigDataPropertyException`. Vì sao và cách đúng?',
+    opts: [
+      'Do YAML sai thụt lề',
+      'Không được đặt `spring.profiles.active` trong file **cấu hình theo profile** (tránh vòng kích hoạt). Dùng **profile groups** trong application.yml: `spring.profiles.group.dev: local` — kích hoạt dev sẽ kéo theo local',
+      'Do profile local không tồn tại',
+      'Phải đổi tên file thành application-local.yml',
+    ], ans: 'B',
+    exp: 'Spring Boot 2.4 thiết kế lại cơ chế nạp cấu hình (ConfigData API), cấm một số property trong file theo profile (`spring.profiles.active`, `spring.profiles.include`, `spring.profiles.group`). Profile groups là cách khai báo tổ hợp profile rõ ràng.',
+    tags: ['profile', 'profile-groups', 'spring-boot-2.4'], sec: 50, ver: 'Spring Boot 2.4+',
+  },
+  {
+    id: 'SB-036', topic: 'Profiles', d: 'b', cat: 'theory',
+    q: 'Chạy ứng dụng Spring Boot trong Docker và muốn kích hoạt profile `prod` mà **không** sửa image. Cách phổ biến nhất?',
+    opts: [
+      'Sửa application.yml trong jar',
+      'Truyền biến môi trường `SPRING_PROFILES_ACTIVE=prod` (ví dụ `docker run -e SPRING_PROFILES_ACTIVE=prod ...` hoặc `env` trong Kubernetes)',
+      'Đổi tên jar thành app-prod.jar',
+      'Thêm @Profile("prod") vào main class',
+    ], ans: 'B',
+    exp: 'Biến môi trường được relaxed binding thành `spring.profiles.active`. Cách này giữ nguyên artifact giữa các môi trường (build once, deploy many). Cũng có thể truyền tham số `--spring.profiles.active=prod` hoặc `-Dspring.profiles.active=prod`.',
+    tags: ['profile', 'docker', 'environment-variable'], sec: 25,
+  },
+  {
+    id: 'SB-037', topic: 'Health Checks', d: 'i', cat: 'theory',
+    q: 'Cần thêm vào `/actuator/health` một kiểm tra "kết nối tới cổng thanh toán còn hoạt động". Cách cài đặt chuẩn trong Spring Boot?',
+    code: `
+@Component
+public class PaymentGatewayHealthIndicator implements HealthIndicator {
+    @Override
+    public Health health() {
+        boolean ok = gateway.ping(Duration.ofMillis(500));
+        return ok ? Health.up().build()
+                  : Health.down().withDetail("gateway", "unreachable").build();
+    }
+}`,
+    opts: [
+      'Không hợp lệ, phải viết controller /health riêng',
+      'Hợp lệ: bean `HealthIndicator` được tự động gộp vào health tổng hợp với tên `paymentGateway` (bỏ hậu tố HealthIndicator); cần timeout ngắn và cân nhắc có nên đưa vào nhóm readiness hay không',
+      'Chỉ hoạt động khi thêm @EnableHealth',
+      'Phải trả về String "UP"',
+    ], ans: 'B',
+    exp: 'Health tổng hợp DOWN nếu bất kỳ indicator nào DOWN. Với dependency bên ngoài, việc đưa vào probe cần thận trọng: đối tác sự cố không nên làm Kubernetes restart pod của bạn. Có thể cấu hình nhóm: `management.endpoint.health.group.readiness.include=db,paymentGateway`.',
+    tags: ['healthindicator', 'actuator'], sec: 40,
+  },
+  {
+    id: 'SB-038', topic: 'Health Checks', d: 'a', cat: 'scenario',
+    q: 'Readiness probe gọi `/actuator/health` mỗi 5 giây với timeout 1 giây. Health có indicator gọi API đối tác (đôi khi mất 3 giây). Khi đối tác chậm, mọi pod bị đánh dấu not-ready cùng lúc và service mất toàn bộ endpoint. Cải tiến hợp lý?',
+    opts: [
+      'Tăng số pod',
+      'Không để probe phụ thuộc trực tiếp vào hệ thống ngoài chậm: tách nhóm health (`/actuator/health/readiness` chỉ gồm thành phần nội tại), kiểm tra dependency ngoài bằng metrics/cảnh báo hoặc chạy nền và cache kết quả; đặt timeout probe phù hợp',
+      'Tắt readiness probe',
+      'Gọi API đối tác hai lần để chắc chắn',
+    ], ans: 'B',
+    exp: 'Probe phải nhanh và phản ánh việc "pod này có xử lý được request không". Phụ thuộc đối tác khiến lỗi bên ngoài lan thành sự cố toàn hệ thống. Mất kết nối đối tác nên xử lý bằng circuit breaker/fallback ở tầng nghiệp vụ và cảnh báo vận hành.',
+    tags: ['readiness', 'probe', 'cascading-failure'], sec: 55,
+  },
+  {
+    id: 'SB-039', topic: 'Application Startup', d: 'i', cat: 'runtime',
+    q: 'Một `CommandLineRunner` nạp dữ liệu tham chiếu và ném RuntimeException do DB thiếu bảng. Điều gì xảy ra với ứng dụng?',
+    opts: [
+      'Exception bị log, ứng dụng vẫn chạy bình thường',
+      'Khởi động thất bại: SpringApplication báo lỗi, đóng context và tiến trình thoát với mã khác 0',
+      'Runner được retry tự động 3 lần',
+      'Chỉ bean runner bị vô hiệu hóa',
+    ], ans: 'B',
+    exp: 'Runner là một phần của quá trình khởi động; exception trong đó làm `SpringApplication.run` thất bại (fail-fast). Nếu tác vụ không bắt buộc cho việc phục vụ request, hãy bắt lỗi và log, hoặc chạy bất đồng bộ sau ApplicationReadyEvent.',
+    tags: ['commandlinerunner', 'startup-failure'], sec: 30,
+  },
+  {
+    id: 'SB-040', topic: 'Application Startup', d: 'a', cat: 'tradeoff',
+    q: 'Bật `spring.main.lazy-initialization=true` giúp ứng dụng khởi động nhanh hơn 40%. Rủi ro chính khi dùng ở production?',
+    opts: [
+      'Không có rủi ro',
+      'Lỗi cấu hình/khởi tạo bean bị phát hiện **muộn** (khi request đầu tiên dùng tới bean) thay vì lúc deploy; request đầu tiên chậm hơn; readiness có thể báo sẵn sàng trong khi bean quan trọng chưa được kiểm chứng',
+      'Bean singleton thành prototype',
+      'Không dùng được @Transactional',
+    ], ans: 'B',
+    exp: 'Lazy initialization hữu ích cho dev (khởi động nhanh) hoặc ứng dụng serverless; ở production thường ưu tiên fail-fast. Có thể loại trừ một số bean khỏi lazy bằng `@Lazy(false)`. Các cách khác để khởi động nhanh: giảm auto-config thừa, AppCDS, CRaC, native image.',
+    tags: ['lazy-initialization', 'startup', 'fail-fast'], sec: 45,
+  },
+  {
+    id: 'SB-041', topic: 'Spring Boot Auto-Configuration', d: 's', cat: 'debug',
+    q: 'Trong một class `@Configuration` **của ứng dụng** (không phải auto-configuration), bạn viết `@Bean @ConditionalOnMissingBean(Clock.class) Clock defaultClock()` để chỉ tạo nếu chưa có bean Clock khác. Đôi khi vẫn có hai bean Clock, đôi khi không. Vì sao?',
+    opts: [
+      'Do Clock không phải interface',
+      'Điều kiện `@ConditionalOnMissingBean` được đánh giá dựa trên các bean definition **đã đăng ký tại thời điểm đó**; với cấu hình người dùng, thứ tự xử lý các class không được đảm bảo. Annotation này chỉ đáng tin cậy trong auto-configuration (được xử lý sau cấu hình người dùng và có thể sắp thứ tự bằng @AutoConfiguration(after/before))',
+      'Do thiếu @Primary',
+      'Do Clock là final class',
+    ], ans: 'B',
+    exp: 'Tài liệu Spring Boot khuyến cáo chỉ dùng các condition dựa trên bean trong auto-configuration class. Trong ứng dụng, hãy khai báo tường minh hoặc dùng `@Primary`/profile/property để chọn bean.',
+    tags: ['conditionalonmissingbean', 'auto-configuration', 'ordering'], sec: 65,
+  },
+  {
+    id: 'SB-042', topic: 'Starter Dependencies', d: 'b', cat: 'theory',
+    q: '`spring-boot-starter-test` cung cấp sẵn những thư viện nào (Spring Boot 3)?',
+    opts: [
+      'Chỉ JUnit 4',
+      'JUnit Jupiter (JUnit 5), Spring Test & Spring Boot Test, AssertJ, Hamcrest, Mockito, JSONassert, JsonPath, Awaitility…',
+      'Selenium và Cucumber',
+      'Testcontainers và WireMock',
+    ], ans: 'B',
+    exp: 'Testcontainers và WireMock cần thêm dependency riêng (Spring Boot quản lý version Testcontainers qua BOM). Starter test được khai báo scope `test` để không vào artifact production.',
+    tags: ['starter-test', 'junit5', 'mockito'], sec: 25,
+  },
+  {
+    id: 'SB-043', topic: 'Configuration Properties', d: 'i', cat: 'theory',
+    q: 'Với `@ConfigurationProperties("client") record ClientProps(Duration timeout)` và cấu hình `client.timeout=30` (không có đơn vị), giá trị `timeout` là bao nhiêu?',
+    opts: ['30 giây', '30 mili giây', '30 phút', 'Lỗi binding vì thiếu đơn vị'], ans: 'B',
+    exp: 'Khi binding `Duration` từ số không có đơn vị, Spring Boot mặc định hiểu là **mili giây** (có thể đổi bằng `@DurationUnit(ChronoUnit.SECONDS)`). Nên luôn ghi đơn vị rõ ràng: `30s`, `500ms`, `2m`, hoặc định dạng ISO-8601 `PT30S`. Tương tự `DataSize` mặc định là byte (`10MB`).',
+    tags: ['duration', 'configurationproperties', 'binding'], sec: 35,
+  },
+  {
+    id: 'SB-044', topic: 'Embedded Server', d: 'i', cat: 'debug',
+    q: 'API upload hóa đơn PDF hoạt động với file nhỏ, nhưng file 3MB bị từ chối với `MaxUploadSizeExceededException`. Nguyên nhân và cấu hình cần chỉnh?',
+    opts: [
+      'Tomcat không hỗ trợ file PDF',
+      'Giới hạn multipart mặc định của Spring Boot là 1MB mỗi file (`spring.servlet.multipart.max-file-size`) và 10MB mỗi request (`max-request-size`). Tăng theo nhu cầu nghiệp vụ, và xử lý exception để trả 413/400 rõ ràng',
+      'Phải dùng PUT thay vì POST',
+      'Do JSON không chứa được file',
+    ], ans: 'B',
+    exp: 'Giới hạn tồn tại để bảo vệ server khỏi request quá lớn. Nhớ kiểm tra cả giới hạn ở các tầng phía trước (Nginx `client_max_body_size`, API Gateway, Ingress) — thường là nguyên nhân 413 khi đã sửa cấu hình Spring. File rất lớn nên upload trực tiếp lên object storage bằng presigned URL.',
+    tags: ['multipart', 'upload', 'limits'], sec: 40,
+  },
+  {
+    id: 'SB-045', topic: 'REST Controllers', d: 'i', cat: 'design',
+    q: 'Khi không tìm thấy đơn hàng, cách nào giúp controller gọn và xử lý lỗi nhất quán trên toàn API?',
+    opts: [
+      'Mỗi controller tự try/catch và trả `ResponseEntity.status(404).body("not found")`',
+      'Service ném exception nghiệp vụ (`OrderNotFoundException`); `@RestControllerAdvice` ánh xạ sang 404 với body ProblemDetail thống nhất. (Với trường hợp đơn giản có thể dùng `@ResponseStatus(HttpStatus.NOT_FOUND)` trên class exception hoặc `ResponseStatusException`)',
+      'Trả 200 với body null',
+      'Trả 500 để client tự hiểu',
+    ], ans: 'B',
+    exp: 'Tập trung ánh xạ exception → HTTP giúp controller chỉ mô tả "happy path", format lỗi đồng nhất và dễ thay đổi. `ResponseStatusException` tiện cho trường hợp lẻ nhưng rải trong nhiều nơi sẽ khó giữ nhất quán.',
+    tags: ['controlleradvice', 'responsestatus', 'error-handling'], sec: 40,
+  },
+  {
+    id: 'SB-046', topic: 'Global Exception Handling', d: 'a', cat: 'debug',
+    q: 'Một `OncePerRequestFilter` kiểm tra API key ném `InvalidApiKeyException`. Dù `@RestControllerAdvice` có `@ExceptionHandler(InvalidApiKeyException.class)`, client vẫn nhận lỗi 500 với body mặc định. Vì sao?',
+    opts: [
+      'Do thiếu @ResponseStatus',
+      'Filter chạy **trước** DispatcherServlet; @ControllerAdvice chỉ xử lý exception phát sinh trong quá trình xử lý của DispatcherServlet (controller, interceptor, binding). Exception trong filter phải được xử lý ngay trong filter (ghi response 401) hoặc chuyển qua `HandlerExceptionResolver` được inject vào filter',
+      'Do exception phải là checked exception',
+      'Do @RestControllerAdvice chỉ bắt RuntimeException',
+    ], ans: 'B',
+    exp: 'Tương tự, exception trong Spring Security filter được xử lý bởi `AuthenticationEntryPoint`/`AccessDeniedHandler`, không phải ControllerAdvice. Hiểu ranh giới filter vs DispatcherServlet giúp thiết kế xử lý lỗi nhất quán.',
+    tags: ['filter', 'controlleradvice', 'dispatcherservlet'], sec: 55,
+  },
+  {
+    id: 'SB-047', topic: 'Validation', d: 'a', cat: 'theory',
+    q: 'Service được đánh dấu `@Validated` với method `void register(@Valid UserCommand cmd)`. Controller gọi service với `cmd` có email rỗng (vi phạm `@NotBlank`). Exception nào được ném và client nhận status gì nếu không có handler riêng?',
+    opts: [
+      '`MethodArgumentNotValidException`, 400',
+      '`ConstraintViolationException` (method validation qua AOP proxy); không có handler riêng thì thường thành lỗi **500**',
+      'Không có exception vì validation chỉ chạy ở controller',
+      '`BindException`, 422',
+    ], ans: 'B',
+    exp: '`MethodArgumentNotValidException` chỉ phát sinh khi validate `@RequestBody` ở controller. Method validation ở service (cần `@Validated` trên class, chạy bằng proxy) ném `ConstraintViolationException` — cần thêm @ExceptionHandler để trả 400. (Spring 6.1+ có `HandlerMethodValidationException` cho method validation ở tầng controller.)',
+    tags: ['validated', 'constraintviolationexception', 'method-validation'], sec: 55,
+  },
+  {
+    id: 'SB-048', topic: 'Logging', d: 'i', cat: 'theory',
+    q: 'Vì sao Spring Boot khuyến nghị đặt cấu hình Logback trong `logback-spring.xml` thay vì `logback.xml`?',
+    opts: [
+      'Vì logback.xml không được hỗ trợ',
+      '`logback.xml` được Logback nạp quá sớm, trước khi Spring khởi tạo; `logback-spring.xml` cho phép Spring Boot xử lý các extension như `<springProfile name="prod">` và `<springProperty>` lấy giá trị từ Environment',
+      'Vì logback-spring.xml chạy nhanh hơn',
+      'Vì logback.xml chỉ dùng cho test',
+    ], ans: 'B',
+    exp: 'Với cấu hình đơn giản, chỉ cần property `logging.level.*`, `logging.file.name`, `logging.pattern.*`. Đổi log level lúc chạy có thể dùng endpoint `/actuator/loggers` (cần bảo vệ).',
+    tags: ['logback', 'springprofile', 'logging'], sec: 35,
+  },
+  {
+    id: 'SB-049', topic: 'Actuator', d: 'i', cat: 'debug',
+    q: 'Đội vận hành cần Prometheus scrape metrics của ứng dụng tại `/actuator/prometheus`, nhưng endpoint trả 404. Đã có `spring-boot-starter-actuator`. Còn thiếu gì?',
+    opts: [
+      'Thiếu @EnablePrometheus',
+      'Thêm dependency `micrometer-registry-prometheus` (để có registry định dạng Prometheus) và expose endpoint: `management.endpoints.web.exposure.include=health,info,prometheus`',
+      'Prometheus chỉ hỗ trợ ứng dụng WebFlux',
+      'Phải viết controller xuất metrics thủ công',
+    ], ans: 'B',
+    exp: 'Actuator tự cấu hình endpoint khi có registry tương ứng trên classpath; mặc định chỉ `health` được expose qua HTTP. Metrics có sẵn: `http.server.requests`, `jvm.*`, `hikaricp.*`, `tomcat.*`… Nên đặt tag chung (`management.metrics.tags.application`) và tránh label có cardinality cao.',
+    tags: ['prometheus', 'micrometer', 'actuator'], sec: 35,
+  },
+  {
+    id: 'SB-050', topic: 'Các lỗi thường gặp khi triển khai production', d: 'a', cat: 'scenario',
+    q: 'Sau một lần deploy, vài bảng production bị mất dữ liệu. Điều tra cho thấy profile production vô tình kế thừa `spring.jpa.hibernate.ddl-auto=create-drop` từ cấu hình dev. Bài học và cấu hình đúng cho production?',
+    opts: [
+      'Dùng `ddl-auto=update` ở production cho an toàn',
+      'Production đặt `ddl-auto=validate` (hoặc `none`) và quản lý schema bằng **Flyway/Liquibase** có review; không để giá trị nguy hiểm trong cấu hình mặc định; tài khoản DB của ứng dụng không cần quyền DDL; luôn có backup đã kiểm chứng khôi phục',
+      'Tắt Hibernate',
+      'Chạy deploy vào cuối tuần',
+    ], ans: 'B',
+    exp: '`create`/`create-drop` xóa và tạo lại bảng; `update` cũng không an toàn (không xóa cột cũ, có thể tạo thay đổi ngoài dự kiến, không có lịch sử). Nguyên tắc least privilege với tài khoản DB giúp lỗi cấu hình không gây thảm họa. Spring Boot chỉ mặc định `create-drop` cho DB nhúng (H2), còn DB thật mặc định `none`.',
+    tags: ['ddl-auto', 'flyway', 'production'], sec: 50,
+  },
 ]);

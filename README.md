@@ -93,14 +93,14 @@ node tools/validate.js
 - Chưa có câu hỏi tự luận hay live coding — mọi câu đều trắc nghiệm theo yêu cầu phiên bản đầu.
 - Dữ liệu chỉ lưu trên một trình duyệt; đồng bộ nhiều thiết bị phải dùng Export/Import thủ công.
 - Không có bộ test tự động cho giao diện (UI). Logic cốt lõi có `tools/test.js`; luồng giao diện được kiểm thử bằng trình duyệt (mục 7), chưa tự động hóa.
-- Ngân hàng phủ 100% topic nhưng **nhiều topic mới có 1 câu** (112/268 topic có đúng 1 câu). Nên bổ sung dần theo mục 5.
+- Ngân hàng phủ 100% topic nhưng **nhiều topic mới có 1 câu** (104/268 topic có đúng 1 câu). Nên bổ sung dần theo mục 5.
 - Thay đổi khoảng ôn tập trong Cài đặt chỉ áp dụng cho các lần trả lời sau, không tính lại lịch đã có.
 - Số câu dự kiến hiển thị ở trang thiết lập Interview là ước lượng (mỗi lần bắt đầu chọn ngẫu nhiên lại).
 - Spring Boot 3.4+/Java 21+ thay đổi nhanh: các câu có trường `ver` cần rà soát khi có phiên bản mới.
 
 ## 4. Ngân hàng câu hỏi — số lượng thực tế
 
-Tổng: **477 câu**, 16 module, phủ **100% topic** đã khai báo (268 topic; 112 topic mới có 1 câu). Số liệu sinh bởi `node tools/validate.js`:
+Tổng: **529 câu**, 16 module, phủ **100% topic** đã khai báo (268 topic; 104 topic mới có 1 câu). Số liệu sinh bởi `node tools/validate.js`:
 
 | # | Module | Beginner | Intermediate | Advanced | Senior | Tổng |
 |---|---|---:|---:|---:|---:|---:|
@@ -109,8 +109,8 @@ Tổng: **477 câu**, 16 module, phủ **100% topic** đã khai báo (268 topic;
 | 3 | Collections Framework | 5 | 13 | 6 | 2 | 26 |
 | 4 | JVM và Memory Management | 3 | 10 | 8 | 4 | 25 |
 | 5 | Multithreading và Concurrency | 2 | 16 | 11 | 4 | 33 |
-| 6 | Spring Framework | 5 | 13 | 10 | 3 | 31 |
-| 7 | Spring Boot | 5 | 17 | 7 | 1 | 30 |
+| 6 | Spring Framework | 10 | 27 | 21 | 5 | 63 |
+| 7 | Spring Boot | 8 | 26 | 14 | 2 | 50 |
 | 8 | Database và SQL | 7 | 21 | 13 | 5 | 46 |
 | 9 | Hibernate và JPA | 3 | 18 | 12 | 5 | 38 |
 | 10 | REST API và Web | 7 | 15 | 6 | 4 | 32 |
@@ -120,9 +120,9 @@ Tổng: **477 câu**, 16 module, phủ **100% topic** đã khai báo (268 topic;
 | 14 | System Design và Backend Architecture | 2 | 8 | 11 | 4 | 25 |
 | 15 | Git, Linux, Docker và CI/CD | 5 | 12 | 2 | 1 | 20 |
 | 16 | Production Troubleshooting | 0 | 3 | 10 | 5 | 18 |
-| | **Tổng** | **70** | **228** | **134** | **45** | **477** |
+| | **Tổng** | **78** | **251** | **152** | **48** | **529** |
 
-Theo loại: lý thuyết 139, chọn thiết kế 70, tìm nguyên nhân lỗi 62, dự đoán output 52, bug logic 35, tình huống thực tế 32, trade-off 26, hiệu năng 24, lỗi runtime 14, SQL 14, lỗi compile 9. Có 140 câu kèm code hoặc bảng dữ liệu; 10 câu nhiều đáp án.
+Theo loại: lý thuyết 157, chọn thiết kế 76, tìm nguyên nhân lỗi 73, dự đoán output 55, bug logic 40, tình huống thực tế 36, trade-off 28, hiệu năng 24, lỗi runtime 17, SQL 14, lỗi compile 9. Có 151 câu kèm code hoặc bảng dữ liệu; 10 câu nhiều đáp án.
 
 Câu SQL dự đoán kết quả luôn kèm bảng dữ liệu mẫu (`departments`, `employees`, …). Câu phụ thuộc phiên bản ghi rõ phạm vi (`Java 16+`, `Spring Boot 3.0+`, `Oracle 12c+`…).
 

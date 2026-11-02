@@ -456,4 +456,444 @@ public class InvoiceService {
     exp: '`AnnotationBeanNameGenerator` dùng simple class name, không gồm package. Spring Boot mặc định cũng không cho ghi đè bean definition (`spring.main.allow-bean-definition-overriding=false`), giúp phát hiện xung đột sớm thay vì âm thầm thay bean.',
     tags: ['component-scan', 'bean-name', 'conflict'], sec: 45,
   },
+  {
+    id: 'SPR-032', topic: 'IoC Container', d: 'a', cat: 'theory',
+    q: 'Khác biệt giữa `BeanFactoryPostProcessor` và `BeanPostProcessor`?',
+    opts: [
+      'Hai interface giống nhau, chỉ khác tên',
+      '`BeanFactoryPostProcessor` chạy **trước khi** tạo bean, sửa **BeanDefinition** (ví dụ `PropertySourcesPlaceholderConfigurer` thay `${...}`); `BeanPostProcessor` chạy **sau khi** tạo từng bean, xử lý/bọc **instance** (ví dụ tạo proxy AOP, xử lý @Autowired)',
+      'BeanPostProcessor chỉ chạy khi ứng dụng tắt',
+      'BeanFactoryPostProcessor dùng để tạo proxy cho @Transactional',
+    ], ans: 'B',
+    exp: 'Hai điểm mở rộng ở hai giai đoạn khác nhau của container: chỉnh "công thức" (metadata) và chỉnh "sản phẩm" (object). Spring Boot dùng nhiều BeanFactoryPostProcessor để đăng ký bean (ví dụ `ConfigurationClassPostProcessor` xử lý @Configuration, @ComponentScan). Các annotation như @Autowired, @PostConstruct, @Async đều được hiện thực bằng BeanPostProcessor.',
+    tags: ['beanfactorypostprocessor', 'beanpostprocessor', 'ioc'], sec: 45,
+  },
+  {
+    id: 'SPR-033', topic: 'IoC Container', d: 'i', cat: 'scenario',
+    q: 'Bean sau có lỗi trong constructor. Ứng dụng khởi động thành công, nhưng request đầu tiên gọi tới báo cáo mới lỗi 500. Vì sao lỗi không xuất hiện lúc khởi động?',
+    code: `
+@Lazy
+@Component
+public class ReportGenerator {
+    public ReportGenerator(@Value("\${report.template}") String template) {
+        this.template = Files.readString(Path.of(template));   // file không tồn tại
+    }
+}`,
+    opts: [
+      'Do @Value bị bỏ qua',
+      '`@Lazy` khiến singleton không được tạo khi ApplicationContext khởi động mà chỉ tạo khi được dùng lần đầu, nên lỗi cấu hình bị phát hiện muộn ở runtime thay vì fail-fast lúc startup',
+      'Do Spring luôn tạo bean khi có request đầu tiên',
+      'Do constructor không được phép ném exception',
+    ], ans: 'B',
+    exp: 'Mặc định ApplicationContext khởi tạo sẵn (eager) mọi singleton, nhờ đó lỗi cấu hình lộ ra ngay khi deploy. `@Lazy` (hoặc `spring.main.lazy-initialization=true`) giúp khởi động nhanh hơn nhưng đánh đổi bằng lỗi xuất hiện muộn và request đầu tiên chậm. Chỉ dùng lazy có chủ đích cho bean nặng, ít dùng.',
+    tags: ['lazy', 'eager-initialization', 'fail-fast'], sec: 45,
+  },
+  {
+    id: 'SPR-034', topic: 'Dependency Injection', d: 'i', cat: 'output',
+    q: 'Có hai bean `DataSource`: `mainDataSource` (đánh dấu `@Primary`) và `reportingDataSource`. Service sau nhận bean nào?',
+    code: `
+@Service
+public class ReportService {
+    private final DataSource ds;
+
+    public ReportService(@Qualifier("reportingDataSource") DataSource ds) {
+        this.ds = ds;
+    }
+}`,
+    opts: ['mainDataSource vì có @Primary', 'reportingDataSource vì @Qualifier được ưu tiên hơn @Primary', 'Lỗi NoUniqueBeanDefinitionException', 'Spring inject cả hai'], ans: 'B',
+    exp: '`@Primary` là lựa chọn **mặc định** khi có nhiều ứng viên; `@Qualifier` chỉ định **cụ thể** tại điểm inject và luôn thắng. Mẫu phổ biến: một DataSource chính @Primary cho JPA, các DataSource phụ (báo cáo, replica) inject bằng @Qualifier.',
+    tags: ['qualifier', 'primary', 'datasource'], sec: 35,
+  },
+  {
+    id: 'SPR-035', topic: 'Dependency Injection', d: 'a', cat: 'design',
+    q: 'Module audit là tùy chọn: chỉ khi bật cấu hình mới có bean `AuditPublisher`. `OrderService` cần dùng nó nếu có, nhưng ứng dụng vẫn phải khởi động khi không có. Cách inject phù hợp?',
+    opts: [
+      'Inject trực tiếp `AuditPublisher` và bắt NoSuchBeanDefinitionException',
+      'Inject `ObjectProvider<AuditPublisher>` (dùng `ifAvailable(...)`/`getIfAvailable()`) hoặc `Optional<AuditPublisher>` qua constructor',
+      'Dùng `new AuditPublisher()` khi bean không tồn tại',
+      'Đánh dấu OrderService là prototype',
+    ], ans: 'B',
+    exp: 'Dependency bắt buộc mà không có bean → context không khởi động được. `ObjectProvider` cho phép lấy lazy, tùy chọn, hoặc lấy tất cả (`orderedStream()`); `Optional<T>` đơn giản khi chỉ cần "có hoặc không". Cách khác là cung cấp một implementation "no-op" mặc định với `@ConditionalOnMissingBean` để code không phải kiểm tra null.',
+    tags: ['objectprovider', 'optional-dependency'], sec: 45,
+  },
+  {
+    id: 'SPR-036', topic: 'Bean Lifecycle', d: 'i', cat: 'output',
+    q: 'Khi Spring tạo bean sau, thứ tự in ra là gì?',
+    code: `
+@Component
+public class CacheLoader implements InitializingBean {
+    public CacheLoader() { System.out.print("ctor "); }
+
+    @Autowired
+    void setRepo(ProductRepository repo) { System.out.print("inject "); }
+
+    @PostConstruct
+    void init() { System.out.print("post "); }
+
+    @Override
+    public void afterPropertiesSet() { System.out.print("afterProps "); }
+}`,
+    opts: ['ctor post inject afterProps', 'ctor inject post afterProps', 'ctor inject afterProps post', 'inject ctor post afterProps'], ans: 'B',
+    exp: 'Thứ tự: constructor → inject dependency (setter/field) → `@PostConstruct` (do `CommonAnnotationBeanPostProcessor` trong bước before-initialization) → `InitializingBean.afterPropertiesSet()` → init-method tùy chỉnh. Vì vậy trong @PostConstruct mọi dependency đã sẵn sàng, còn trong constructor thì field injection chưa xảy ra.',
+    tags: ['lifecycle', 'postconstruct', 'initializingbean'], sec: 45,
+  },
+  {
+    id: 'SPR-037', topic: 'Bean Lifecycle', d: 'i', cat: 'theory',
+    q: 'Trường hợp nào `@PreDestroy` của một bean **không** được gọi?',
+    opts: [
+      'Bean singleton khi ứng dụng tắt bằng SIGTERM',
+      'Bean scope prototype (Spring không quản lý vòng đời sau khi trao object), hoặc khi tiến trình bị kill -9/crash',
+      'Bean có @Service',
+      'Bean được tạo bằng @Bean method',
+    ], ans: 'B',
+    exp: 'Với prototype, container tạo và cấu hình object rồi giao cho nơi yêu cầu; việc dọn dẹp là trách nhiệm của người dùng. SIGKILL không cho JVM chạy shutdown hook nên mọi callback hủy đều bị bỏ qua — logic quan trọng (flush dữ liệu) không nên chỉ dựa vào @PreDestroy.',
+    tags: ['predestroy', 'prototype', 'shutdown'], sec: 35,
+  },
+  {
+    id: 'SPR-038', topic: 'Bean Scope', d: 'a', cat: 'debug',
+    q: 'Bean `@RequestScope RequestContextInfo` hoạt động tốt trong controller, nhưng khi gọi từ method `@Async` thì ném `IllegalStateException: No thread-bound request found` (hoặc "Scope \'request\' is not active"). Vì sao?',
+    opts: [
+      'Do @RequestScope phải dùng với @Lazy',
+      'Request scope gắn với **thread đang xử lý HTTP request** (qua RequestContextHolder); method @Async chạy trên thread khác nên không có request nào được gắn. Cần lấy dữ liệu cần thiết trong thread request rồi truyền tường minh vào method async',
+      'Do @Async không hỗ trợ bean singleton',
+      'Do thiếu @EnableWebMvc',
+    ], ans: 'B',
+    exp: '`@RequestScope` đã kèm scoped proxy nên inject vào singleton được; proxy tìm instance thật theo request hiện tại của thread. Ngoài thread request (async, scheduler, message listener), không có request → lỗi. Đây cùng nhóm vấn đề với SecurityContext/MDC dựa trên ThreadLocal.',
+    tags: ['request-scope', 'async', 'threadlocal'], sec: 55,
+  },
+  {
+    id: 'SPR-039', topic: 'Bean Scope', d: 'b', cat: 'theory',
+    q: 'Bean `PriceCalculator` không khai báo scope, được inject vào 3 service khác nhau. Có bao nhiêu instance `PriceCalculator` trong ApplicationContext?',
+    opts: ['3', '1', 'Mỗi request một instance', 'Tùy số thread'], ans: 'B',
+    exp: 'Scope mặc định là **singleton**: một instance cho mỗi container, dùng chung cho mọi điểm inject và mọi thread. Vì vậy bean mặc định phải stateless hoặc thread-safe.',
+    tags: ['singleton', 'scope'], sec: 20,
+  },
+  {
+    id: 'SPR-040', topic: '@Component, @Service, @Repository và @Controller', d: 'b', cat: 'bug',
+    q: 'Developer gắn `@Service` lên **interface** và để class cài đặt không có annotation. Ứng dụng báo không tìm thấy bean khi inject. Vì sao?',
+    code: `
+@Service
+public interface NotificationService { void send(Message m); }
+
+public class EmailNotificationService implements NotificationService { ... }`,
+    opts: [
+      'Do interface phải có @Repository',
+      'Component scanning chỉ tạo bean từ **class cụ thể** có stereotype; interface không thể khởi tạo nên bị bỏ qua, còn class cài đặt không có annotation nên cũng không được đăng ký. Đặt `@Service` lên class EmailNotificationService',
+      'Do thiếu @Autowired trên interface',
+      'Do tên bean bị trùng',
+    ], ans: 'B',
+    exp: 'Stereotype annotation đánh dấu class mà container cần khởi tạo. (Spring Data repository interface là ngoại lệ vì Spring Data tự sinh implementation qua `@EnableJpaRepositories`, không phải nhờ @Repository trên interface.)',
+    tags: ['stereotype', 'component-scan', 'interface'], sec: 30,
+  },
+  {
+    id: 'SPR-041', topic: '@Component, @Service, @Repository và @Controller', d: 'i', cat: 'bug',
+    q: 'Endpoint sau được kỳ vọng trả về chuỗi "hello" trong response body, nhưng lại báo lỗi không tìm thấy view (hoặc "Circular view path"). Nguyên nhân?',
+    code: `
+@Controller
+public class HelloController {
+    @GetMapping("/hello")
+    public String hello() {
+        return "hello";
+    }
+}`,
+    opts: [
+      'Thiếu @RequestMapping ở mức class',
+      'Với `@Controller`, giá trị String trả về được hiểu là **tên view** để render. Muốn ghi trực tiếp vào body cần `@ResponseBody` trên method hoặc dùng `@RestController`',
+      'Phải trả về ResponseEntity<String> mới hợp lệ',
+      'Do GET không được trả về String',
+    ], ans: 'B',
+    exp: '`@RestController` = `@Controller` + `@ResponseBody`. Không có template engine phù hợp, Spring cố forward tới view "hello" → lỗi. Đây là lỗi phổ biến khi chuyển từ ứng dụng MVC render HTML sang REST API.',
+    tags: ['controller', 'responsebody', 'view'], sec: 35,
+  },
+  {
+    id: 'SPR-042', topic: '@Configuration và @Bean', d: 'b', cat: 'theory',
+    q: 'Bean được khai báo bằng method `@Bean public RestClient partnerClient() {...}` trong class `@Configuration` có tên bean mặc định là gì?',
+    opts: ['restClient', 'partnerClient (tên method)', 'RestClient', 'Tên class cấu hình'], ans: 'B',
+    exp: 'Với `@Bean`, tên bean mặc định là **tên method**; có thể đặt tên/alias bằng `@Bean("name")` hoặc `@Bean(name = {"a", "b"})`. Khác với component scanning, nơi tên lấy từ tên class viết thường chữ đầu. Hai method @Bean cùng tên ở hai class cấu hình khác nhau sẽ xung đột (Spring Boot không cho ghi đè bean definition mặc định).',
+    tags: ['bean', 'bean-name'], sec: 25,
+  },
+  {
+    id: 'SPR-043', topic: '@Configuration và @Bean', d: 'a', cat: 'theory',
+    q: 'Bạn khai báo `@Bean public HikariDataSource reportingDataSource() {...}` và không cấu hình `destroyMethod`. Khi ApplicationContext đóng, pool kết nối có được đóng không?',
+    opts: [
+      'Không, phải tự gọi close() trong @PreDestroy',
+      'Có: với @Bean, Spring **suy luận destroy method** — tự gọi method public `close()` hoặc `shutdown()` nếu có (hoặc AutoCloseable). Muốn tắt hành vi này dùng `@Bean(destroyMethod = "")`',
+      'Chỉ khi bean là prototype',
+      'Chỉ khi dùng Spring Boot Actuator',
+    ], ans: 'B',
+    exp: 'Mặc định `destroyMethod = AbstractBeanDefinition.INFER_METHOD` cho bean khai báo bằng Java config. Điều này giúp tài nguyên (pool, client, executor) được giải phóng gọn gàng. Ngược lại, nếu object được chia sẻ và do nơi khác quản lý vòng đời, cần tắt suy luận để tránh bị đóng sớm.',
+    tags: ['bean', 'destroy-method', 'resource'], sec: 45,
+  },
+  {
+    id: 'SPR-044', topic: '@Configuration và @Bean', d: 's', cat: 'debug',
+    q: 'Trong một class `@Configuration` có field `@Value("${app.region}") String region` và một method `@Bean` (không static) trả về `BeanFactoryPostProcessor` tùy chỉnh. Log cảnh báo và `region` bị null. Nguyên nhân và cách sửa?',
+    opts: [
+      'Do thuộc tính app.region không tồn tại',
+      'Để tạo BeanFactoryPostProcessor (chạy rất sớm), Spring phải khởi tạo **class cấu hình chứa nó** trước khi các BeanPostProcessor xử lý @Value/@Autowired, nên field không được inject. Khai báo method @Bean trả về BFPP là `static` để không cần khởi tạo class cấu hình',
+      'Do @Value không dùng được trong @Configuration',
+      'Do thiếu @PropertySource',
+    ], ans: 'B',
+    exp: 'Spring log cảnh báo kiểu "@Bean method ... is non-static and returns an object assignable to Spring\'s BeanFactoryPostProcessor interface". Quy tắc: @Bean trả về BeanFactoryPostProcessor (ví dụ `PropertySourcesPlaceholderConfigurer`) nên là `static`.',
+    tags: ['beanfactorypostprocessor', 'static-bean', 'value'], sec: 60,
+  },
+  {
+    id: 'SPR-045', topic: 'Constructor Injection', d: 'i', cat: 'bug',
+    q: 'Class có hai constructor và không đánh dấu `@Autowired`. Khi gọi `notify()`, ném NullPointerException. Vì sao?',
+    code: `
+@Service
+public class AlertService {
+    private SmsClient sms;
+
+    public AlertService() { }                       // dùng cho test cũ
+
+    public AlertService(SmsClient sms) { this.sms = sms; }
+
+    public void notify(String msg) { sms.send(msg); }
+}`,
+    opts: [
+      'SmsClient không phải bean',
+      'Khi có nhiều constructor mà không chỉ định, Spring dùng **constructor mặc định (không tham số)**; `sms` không bao giờ được gán. Xóa constructor thừa, hoặc đánh dấu constructor cần dùng bằng `@Autowired`',
+      'Spring luôn chọn constructor có nhiều tham số nhất',
+      'Do field không final nên không inject được',
+    ], ans: 'B',
+    exp: 'Quy tắc: một constructor duy nhất → dùng nó; nhiều constructor → dùng constructor có @Autowired, nếu không có thì dùng constructor không tham số (không có thì lỗi "No default constructor found"). Giữ một constructor và field `final` giúp lỗi lộ ra ngay lúc compile/startup.',
+    tags: ['constructor-injection', 'multiple-constructors', 'npe'], sec: 45,
+  },
+  {
+    id: 'SPR-046', topic: 'Constructor Injection', d: 'i', cat: 'runtime',
+    q: '`InvoiceService` nhận `CustomerService` qua constructor và `CustomerService` cũng nhận `InvoiceService` qua constructor (Spring Framework, không bật allow-circular-references). Điều gì xảy ra khi khởi động?',
+    opts: [
+      'Spring tự giải quyết bằng proxy',
+      'Ném `BeanCurrentlyInCreationException`: để tạo A cần B hoàn chỉnh và ngược lại — với constructor injection không thể tạo một bên "dở dang" để phá vòng',
+      'Spring tạo hai instance cho mỗi service',
+      'Ứng dụng khởi động, lỗi chỉ xảy ra khi gọi method',
+    ], ans: 'B',
+    exp: 'Với setter/field injection, Spring từng có thể phá vòng bằng early reference (bean chưa khởi tạo xong) — điều mà Spring Boot 2.6+ cũng cấm mặc định. Constructor injection làm lỗi vòng phụ thuộc lộ ra ngay, buộc xem lại thiết kế (tách logic chung, dùng event).',
+    tags: ['circular-dependency', 'constructor-injection'], sec: 40,
+  },
+  {
+    id: 'SPR-047', topic: '@Autowired', d: 'i', cat: 'bug',
+    q: 'Class tiện ích dùng field static để gọi repository từ method static. Field luôn null. Vì sao?',
+    code: `
+@Component
+public class CurrencyUtils {
+    @Autowired
+    private static RateRepository repo;
+
+    public static BigDecimal convert(BigDecimal amount, String to) {
+        return amount.multiply(repo.rate(to));
+    }
+}`,
+    opts: [
+      'Do repository chưa được tạo',
+      'Spring **không inject vào field static** (`@Autowired` trên field static bị bỏ qua, chỉ log cảnh báo). Dependency thuộc về object; nên biến CurrencyUtils thành bean thường (method instance) và inject nó vào nơi cần',
+      'Do thiếu @Lazy',
+      'Do @Component không dùng được với class tiện ích',
+    ], ans: 'B',
+    exp: 'Static field tồn tại độc lập với vòng đời container; "mẹo" gán static trong @PostConstruct hoạt động nhưng tạo coupling ẩn, khó test, và hỏng khi có nhiều context (ví dụ test). Quy tắc: logic cần dependency nên là bean.',
+    tags: ['autowired', 'static', 'npe'], sec: 35,
+  },
+  {
+    id: 'SPR-048', topic: '@Autowired', d: 'a', cat: 'theory',
+    q: 'Có hai bean: `OrderEventHandler implements EventHandler<OrderEvent>` và `PaymentEventHandler implements EventHandler<PaymentEvent>`. Constructor yêu cầu `EventHandler<OrderEvent> handler`. Spring xử lý thế nào?',
+    opts: [
+      'Lỗi NoUniqueBeanDefinitionException vì có hai EventHandler',
+      'Inject `OrderEventHandler`: Spring dùng **generic type** như một dạng qualifier khi phân giải dependency',
+      'Inject ngẫu nhiên một trong hai',
+      'Generic bị xóa (type erasure) nên Spring luôn lỗi',
+    ], ans: 'B',
+    exp: 'Từ Spring 4, generic của điểm inject được dùng để chọn bean (Spring đọc thông tin generic từ chữ ký class/method, vốn được lưu trong bytecode dù có type erasure ở runtime với object). Có thể inject `List<EventHandler<OrderEvent>>` để lấy mọi handler phù hợp.',
+    tags: ['generics', 'autowired', 'qualifier'], sec: 45,
+  },
+  {
+    id: 'SPR-049', topic: 'Component Scanning', d: 'i', cat: 'design',
+    q: 'Thư viện nội bộ `com.acme.common.audit` có class cấu hình `AuditConfig` (@Configuration). Ứng dụng có main class ở `com.shop`. Cách nào đăng ký cấu hình này một cách tường minh, không mở rộng phạm vi scan toàn bộ package của thư viện?',
+    opts: [
+      'Đổi main class về package `com`',
+      'Dùng `@Import(AuditConfig.class)` trên một class cấu hình của ứng dụng (hoặc thư viện cung cấp auto-configuration/annotation `@EnableAudit` dùng @Import)',
+      'Copy AuditConfig vào package com.shop',
+      'Thêm @Component vào mọi class của thư viện',
+    ], ans: 'B',
+    exp: '`@Import` đăng ký trực tiếp class cấu hình, rõ ràng và không kéo theo các component không mong muốn. Mẫu `@EnableXxx` (như `@EnableScheduling`) thực chất là annotation chứa @Import. Với thư viện dùng chung trong Spring Boot, auto-configuration là cách chuẩn nhất.',
+    tags: ['import', 'component-scan', 'library'], sec: 40,
+  },
+  {
+    id: 'SPR-050', topic: 'Component Scanning', d: 'a', cat: 'debug',
+    q: 'Main class `@SpringBootApplication public class App` được đặt ở **default package** (file không có dòng `package`). Ứng dụng khởi động rất chậm, báo lỗi lạ từ các thư viện và log có cảnh báo về @ComponentScan. Vì sao?',
+    opts: [
+      'Do thiếu file application.yml',
+      'Component scan bắt đầu từ package của main class; default package nghĩa là quét **toàn bộ classpath** kể cả mọi jar thư viện, nạp các class không liên quan. Luôn đặt main class trong package gốc của dự án (ví dụ `com.acme.shop`)',
+      'Do Java không hỗ trợ default package',
+      'Do JIT chưa warm-up',
+    ], ans: 'B',
+    exp: 'Spring Boot cảnh báo: "Your ApplicationContext is unlikely to start due to a @ComponentScan of the default package." Ngoài ra không nên dùng default package trong Java nói chung (không import được từ package khác).',
+    tags: ['component-scan', 'default-package'], sec: 40,
+  },
+  {
+    id: 'SPR-051', topic: 'Spring AOP', d: 'i', cat: 'theory',
+    q: 'Pointcut `execution(* com.acme.service..*.*(..))` khớp với những method nào?',
+    opts: [
+      'Chỉ các method public trả về void trong package com.acme.service',
+      'Mọi method (mọi kiểu trả về, mọi tham số) của mọi class trong package `com.acme.service` **và các package con** (do `..`)',
+      'Chỉ method có đúng một tham số',
+      'Chỉ các class có annotation @Service',
+    ], ans: 'B',
+    exp: 'Cấu trúc: `execution(modifiers? return-type declaring-type.method(params))`. `*` khớp bất kỳ kiểu trả về; `..` sau package khớp package con; `.*(..)` mọi method với mọi tham số. Với Spring AOP (proxy), chỉ method có thể bị proxy chặn (public, không final, gọi qua bean) mới thực sự được áp dụng. Các designator khác: `@annotation(...)`, `within(...)`, `bean(...)`.',
+    tags: ['pointcut', 'aspectj-expression'], sec: 40,
+  },
+  {
+    id: 'SPR-052', topic: 'Spring AOP', d: 's', cat: 'design',
+    q: 'Bạn viết aspect `@Retryable`-style tự viết để retry khi gặp `OptimisticLockException`, áp dụng lên method `@Transactional`. Retry không bao giờ thành công: mọi lần thử lại đều thất bại với lỗi transaction rollback-only. Cách sắp xếp đúng?',
+    opts: [
+      'Tăng số lần retry',
+      'Aspect retry đang chạy **bên trong** transaction (cùng transaction đã hỏng). Retry phải bao **bên ngoài** transaction để mỗi lần thử là một transaction mới: đặt `@Order` có độ ưu tiên cao hơn (giá trị nhỏ hơn) cho aspect retry so với transaction advisor (mặc định LOWEST_PRECEDENCE), hoặc đặt retry ở bean gọi bên ngoài',
+      'Dùng Propagation.MANDATORY',
+      'Bắt exception và nuốt nó trong aspect',
+    ], ans: 'B',
+    exp: 'Với nhiều aspect, advice có độ ưu tiên cao chạy "ngoài cùng" khi vào method. Retry bên trong transaction lặp lại thao tác trên một persistence context/transaction đã bị đánh dấu rollback và dữ liệu cũ (stale), nên không bao giờ thành công. Spring Retry `@Retryable` cũng cần được đặt ngoài ranh giới transaction.',
+    tags: ['aop-order', 'retry', 'transactional'], sec: 70,
+  },
+  {
+    id: 'SPR-053', topic: 'Proxy', d: 'a', cat: 'debug',
+    q: 'Ứng dụng cấu hình `spring.aop.proxy-target-class=false`. `PaymentServiceImpl implements PaymentService` có `@Transactional`. Một bean khác inject theo **class cụ thể**: `private final PaymentServiceImpl payment;`. Khởi động báo `BeanNotOfRequiredTypeException ... but was actually of type jdk.proxy2.$Proxy...`. Vì sao?',
+    opts: [
+      'Do @Transactional không dùng được trên class',
+      'Với JDK dynamic proxy, bean trong container là proxy **implement interface PaymentService**, không phải subclass của PaymentServiceImpl, nên không gán được vào kiểu class cụ thể. Inject theo interface, hoặc dùng CGLIB (mặc định của Spring Boot)',
+      'Do PaymentServiceImpl thiếu @Service',
+      'Do vòng phụ thuộc',
+    ], ans: 'B',
+    exp: 'Đây là lý do nên lập trình theo interface khi có proxy JDK, và cũng là lý do Spring Boot chọn CGLIB mặc định (proxy là subclass nên inject theo class vẫn được).',
+    tags: ['jdk-proxy', 'cglib', 'inject-by-class'], sec: 50,
+  },
+  {
+    id: 'SPR-054', topic: 'Proxy', d: 'i', cat: 'output',
+    q: 'Trong Spring 6 (Spring Boot 3), `OrderService` có method `@Transactional`. Đoạn code sau in ra gì (giá trị tiêu biểu)?',
+    code: `
+@Autowired OrderService orderService;
+
+System.out.println(orderService.getClass().getSimpleName());`,
+    opts: ['OrderService', 'OrderService$$SpringCGLIB$$0', 'Proxy', 'TransactionInterceptor'], ans: 'B',
+    exp: 'Bean được inject là **CGLIB proxy** — một subclass sinh động (Spring 6 đặt tên dạng `$$SpringCGLIB$$0`; Spring 5 là `$$EnhancerBySpringCGLIB$$...`). Muốn lấy class thật dùng `AopUtils.getTargetClass(bean)` hoặc `ClassUtils.getUserClass(...)`. Code so sánh `getClass() == OrderService.class` sẽ sai khi có proxy.',
+    tags: ['cglib', 'proxy', 'getclass'], sec: 35, ver: 'Spring 6',
+  },
+  {
+    id: 'SPR-055', topic: 'Proxy', d: 'a', cat: 'tradeoff',
+    q: 'Để `@Transactional` hoạt động khi method gọi method khác trong cùng bean, đồng nghiệp đề xuất dùng `((OrderService) AopContext.currentProxy()).placeOne(o)`. Đánh giá?',
+    opts: [
+      'Cách tốt nhất, không có nhược điểm',
+      'Hoạt động khi bật `@EnableAspectJAutoProxy(exposeProxy = true)`, nhưng làm code phụ thuộc Spring AOP và khó đọc/test. Thường tốt hơn là tách method sang bean khác, hoặc dùng `TransactionTemplate` khi cần kiểm soát ranh giới transaction trong vòng lặp',
+      'Không bao giờ hoạt động',
+      'Chỉ hoạt động với JDK proxy',
+    ], ans: 'B',
+    exp: 'Các cách giải self-invocation: tách bean (rõ ràng nhất), inject chính mình qua `@Lazy`/`ObjectProvider` (hơi "lạ"), `AopContext.currentProxy()` (gắn chặt với framework), hoặc AspectJ weaving (áp dụng cả lời gọi nội bộ, cấu hình phức tạp hơn).',
+    tags: ['self-invocation', 'aopcontext', 'transactiontemplate'], sec: 45,
+  },
+  {
+    id: 'SPR-056', topic: 'Transaction Management', d: 'a', cat: 'scenario',
+    q: 'Method `@Transactional createOrder()` lưu đơn hàng, sau đó gọi `notificationService.sendAsync(orderId)` (method `@Async`). Trong method async, `orderRepository.findById(orderId)` thỉnh thoảng trả về rỗng. Vì sao?',
+    opts: [
+      'Do @Async làm mất kết nối DB',
+      'Method @Async chạy trên thread khác với **transaction riêng**; nó có thể chạy trước khi transaction của createOrder commit, nên ở mức READ COMMITTED chưa thấy đơn hàng. Gọi async sau khi commit, ví dụ qua `@TransactionalEventListener(phase = AFTER_COMMIT)` + @Async',
+      'Do findById có cache',
+      'Do orderId bị null',
+    ], ans: 'B',
+    exp: 'Transaction gắn với thread và không lan sang thread khác. Đây là race condition kinh điển giữa commit và tác vụ nền. Hoặc truyền đầy đủ dữ liệu cần thiết vào tác vụ thay vì để nó đọc lại từ DB.',
+    tags: ['transactional', 'async', 'after-commit'], sec: 55,
+  },
+  {
+    id: 'SPR-057', topic: 'Spring Events', d: 'a', cat: 'debug',
+    q: 'Listener `@TransactionalEventListener(phase = AFTER_COMMIT)` gửi email hoạt động tốt khi event được publish từ service @Transactional. Nhưng khi publish từ một job **không có transaction**, email không bao giờ được gửi và không có lỗi. Vì sao?',
+    opts: [
+      'Do job chạy trên thread khác',
+      'TransactionalEventListener chỉ được gọi khi có transaction đang hoạt động để gắn vào phase; không có transaction thì event bị **bỏ qua**. Đặt `fallbackExecution = true` nếu muốn listener vẫn chạy khi không có transaction',
+      'Do thiếu @EnableAsync',
+      'Do event phải implement ApplicationEvent',
+    ], ans: 'B',
+    exp: 'Hành vi im lặng này dễ gây mất thông báo. Cần quyết định rõ: listener chỉ có ý nghĩa sau commit (giữ mặc định) hay cần chạy cả khi publish ngoài transaction (`fallbackExecution = true`).',
+    tags: ['transactional-event-listener', 'fallback-execution'], sec: 50,
+  },
+  {
+    id: 'SPR-058', topic: 'Spring Events', d: 'i', cat: 'theory',
+    q: 'Method `@EventListener public InvoiceRequested on(OrderPaid e) { ... return new InvoiceRequested(e.orderId()); }` trả về một object (không void). Spring làm gì với giá trị trả về?',
+    opts: [
+      'Bỏ qua giá trị trả về',
+      'Publish giá trị trả về như một **event mới** (nếu trả về collection/array thì publish từng phần tử) — cho phép xâu chuỗi các listener',
+      'Ném IllegalStateException vì listener phải trả về void',
+      'Trả giá trị về cho nơi gọi publishEvent',
+    ], ans: 'B',
+    exp: 'Tính năng này tiện để tạo chuỗi xử lý nhưng làm luồng khó theo dõi nếu lạm dụng. Ngoài ra `@EventListener(condition = "#event.amount > 1000")` lọc event bằng SpEL; nhiều listener cùng event sắp thứ tự bằng `@Order`. Với listener `@Async`, giá trị trả về không được publish.',
+    tags: ['eventlistener', 'event-chaining'], sec: 40,
+  },
+  {
+    id: 'SPR-059', topic: 'Profiles', d: 'b', cat: 'theory',
+    q: 'Class `@Configuration @Profile("dev") public class DevDataConfig` có 3 method `@Bean`. Khi chạy với profile `prod`, điều gì xảy ra?',
+    opts: [
+      'Chỉ class cấu hình bị bỏ qua, 3 bean vẫn được tạo',
+      'Toàn bộ class cấu hình và **cả 3 bean** đều không được đăng ký',
+      'Ứng dụng báo lỗi profile không tồn tại',
+      'Chỉ bean đầu tiên bị bỏ qua',
+    ], ans: 'B',
+    exp: '@Profile trên class cấu hình là điều kiện cho mọi bean khai báo bên trong. Thường dùng để nạp dữ liệu mẫu, stub hệ thống ngoài ở dev/test.',
+    tags: ['profile', 'configuration'], sec: 25,
+  },
+  {
+    id: 'SPR-060', topic: 'Profiles', d: 'i', cat: 'theory',
+    q: 'Bean `@Profile({"dev", "test"})` được tạo khi nào, và bean `@Profile("default")` được tạo khi nào?',
+    opts: [
+      'Bean thứ nhất cần cả dev VÀ test; bean thứ hai luôn được tạo',
+      'Bean thứ nhất được tạo khi dev **hoặc** test active; bean thứ hai chỉ được tạo khi **không có profile nào** được kích hoạt (profile "default" ngầm định)',
+      'Cả hai luôn được tạo',
+      'Bean thứ hai được tạo ở mọi profile',
+    ], ans: 'B',
+    exp: 'Mảng profile là OR. Muốn AND dùng biểu thức: `@Profile("dev & cloud")`. Profile "default" active khi không có profile nào được chỉ định — có thể đổi bằng `spring.profiles.default`.',
+    tags: ['profile', 'default-profile'], sec: 35,
+  },
+  {
+    id: 'SPR-061', topic: 'Profiles', d: 'a', cat: 'design',
+    q: 'Code nghiệp vụ có nhiều chỗ `if (env.acceptsProfiles(Profiles.of("prod"))) { gửi SMS thật } else { log }`. Đánh giá và cải tiến?',
+    opts: [
+      'Cách làm chuẩn, nên áp dụng rộng rãi',
+      'Rải kiểm tra profile trong logic nghiệp vụ làm code khó test và dễ sai môi trường. Nên tạo interface `SmsSender` với hai implementation và chọn bằng `@Profile` hoặc `@ConditionalOnProperty` (ví dụ `sms.provider=real|log`) — logic nghiệp vụ không biết môi trường',
+      'Nên kiểm tra theo hostname thay vì profile',
+      'Nên dùng biến static để lưu profile',
+    ], ans: 'B',
+    exp: 'Profile/điều kiện nên quyết định **bean nào được tạo**, không phải nhánh if trong nghiệp vụ. Dùng property thay vì tên profile còn linh hoạt hơn (bật SMS thật ở staging mà không cần profile prod).',
+    tags: ['profile', 'conditional', 'design'], sec: 45,
+  },
+  {
+    id: 'SPR-062', topic: 'Externalized Configuration', d: 'b', cat: 'runtime',
+    q: 'Bean có `@Value("${payment.timeout}") int timeout;` nhưng property `payment.timeout` không được khai báo ở đâu cả. Điều gì xảy ra?',
+    opts: [
+      'timeout = 0',
+      'Ứng dụng không khởi động được: `Could not resolve placeholder \'payment.timeout\'`. Có thể đặt mặc định `${payment.timeout:5000}`',
+      'timeout = null',
+      'Spring tự đặt timeout = 30',
+    ], ans: 'B',
+    exp: 'Placeholder không phân giải được là lỗi khởi động (fail-fast) — tốt cho cấu hình bắt buộc. Chỉ đặt giá trị mặc định khi thực sự có giá trị hợp lý; với nhóm cấu hình, dùng @ConfigurationProperties + @Validated.',
+    tags: ['value', 'placeholder', 'default'], sec: 25,
+  },
+  {
+    id: 'SPR-063', topic: 'Externalized Configuration', d: 'i', cat: 'bug',
+    q: 'Constructor dùng giá trị từ `@Value` để khởi tạo client, nhưng gặp NullPointerException. Vì sao và cách sửa?',
+    code: `
+@Component
+public class PartnerClient {
+    @Value("\${partner.base-url}")
+    private String baseUrl;
+
+    private final RestClient client;
+
+    public PartnerClient(RestClient.Builder builder) {
+        this.client = builder.baseUrl(baseUrl).build();   // baseUrl == null
+    }
+}`,
+    opts: [
+      'Do property bị sai tên',
+      'Field injection (kể cả @Value) diễn ra **sau** constructor, nên lúc constructor chạy baseUrl vẫn null. Đưa `@Value` vào tham số constructor: `PartnerClient(RestClient.Builder b, @Value("${partner.base-url}") String baseUrl)` (hoặc dùng @ConfigurationProperties)',
+      'Do RestClient.Builder không phải bean',
+      'Do field phải là static',
+    ], ans: 'B',
+    exp: 'Đây là hệ quả trực tiếp của thứ tự lifecycle: constructor → inject field → @PostConstruct. Constructor injection cho cả dependency lẫn giá trị cấu hình giúp object luôn đầy đủ khi tạo xong.',
+    tags: ['value', 'constructor', 'lifecycle'], sec: 40,
+  },
 ]);
