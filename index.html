@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Java Backend Mastery</title>
+  <meta name="description" content="Ôn luyện kiến thức Java Backend Developer từ cơ bản đến nâng cao bằng câu hỏi trắc nghiệm.">
+  <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Áp dụng theme sớm để tránh nháy màn hình khi tải trang
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('jbm.data') || '{}');
+        var t = s && s.settings && s.settings.theme;
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { /* bỏ qua */ }
+    })();
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/dashboard">
+        <span class="brand-logo">JB</span>
+        <span class="brand-text">Java Backend<br><strong>Mastery</strong></span>
+      </a>
+      <nav class="nav" id="nav">
+        <a href="#/dashboard" data-view="dashboard"><span class="ico">◧</span>Dashboard</a>
+        <a href="#/learn" data-view="learn"><span class="ico">📖</span>Học lý thuyết</a>
+        <a href="#/path" data-view="path"><span class="ico">⇢</span>Learning Path</a>
+        <a href="#/quiz" data-view="quiz"><span class="ico">✎</span>Theory Quiz</a>
+        <a href="#/interview" data-view="interview"><span class="ico">◎</span>Interview Simulator</a>
+        <a href="#/challenge" data-view="challenge"><span class="ico">{ }</span>Code Challenge</a>
+        <a href="#/review" data-view="review"><span class="ico">↻</span>Review Mistakes<span class="nav-badge" id="badge-due" hidden></span></a>
+        <a href="#/bookmarks" data-view="bookmarks"><span class="ico">★</span>Bookmarks &amp; Notes</a>
+        <a href="#/bank" data-view="bank"><span class="ico">⌕</span>Ngân hàng câu hỏi</a>
+        <a href="#/analytics" data-view="analytics"><span class="ico">▤</span>Progress &amp; Analytics</a>
+        <a href="#/settings" data-view="settings"><span class="ico">⚙</span>Cài đặt &amp; Dữ liệu</a>
+      </nav>
+      <div class="sidebar-foot" id="sidebar-foot"></div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menu-btn" aria-label="Mở menu">☰</button>
+        <form class="search" id="global-search" role="search">
+          <input type="search" id="global-search-input" placeholder="Tìm câu hỏi theo từ khóa, topic, tag…  (phím /)" aria-label="Tìm kiếm câu hỏi">
+        </form>
+        <button class="icon-btn" id="theme-btn" aria-label="Đổi giao diện sáng/tối" title="Light / Dark mode">◐</button>
+      </header>
+      <div id="active-banner"></div>
+      <main class="content" id="view" tabindex="-1">
+        <div class="loading">Đang tải…</div>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- Lõi ngân hàng câu hỏi (phải tải trước các file data) -->
+  <script src="js/bank.js"></script>
+  <script src="js/lessons.js"></script>
+  <!-- Dữ liệu câu hỏi theo module -->
+  <script src="data/java-core.js"></script>
+  <script src="data/oop.js"></script>
+  <script src="data/collections.js"></script>
+  <script src="data/jvm.js"></script>
+  <script src="data/concurrency.js"></script>
+  <script src="data/spring.js"></script>
+  <script src="data/spring-boot.js"></script>
+  <script src="data/database-sql.js"></script>
+  <script src="data/hibernate-jpa.js"></script>
+  <script src="data/rest-api.js"></script>
+  <script src="data/security.js"></script>
+  <script src="data/testing.js"></script>
+  <script src="data/microservices.js"></script>
+  <script src="data/system-design.js"></script>
+  <script src="data/devops-git-linux.js"></script>
+  <script src="data/troubleshooting.js"></script>
+  <!-- Bài học lý thuyết theo module -->
+  <script src="data/lessons/java-core.js"></script>
+  <script src="data/lessons/oop.js"></script>
+  <script src="data/lessons/collections.js"></script>
+  <script src="data/lessons/jvm.js"></script>
+  <script src="data/lessons/concurrency.js"></script>
+  <script src="data/lessons/spring.js"></script>
+  <script src="data/lessons/spring-boot.js"></script>
+  <script src="data/lessons/database-sql.js"></script>
+  <script src="data/lessons/hibernate-jpa.js"></script>
+  <script src="data/lessons/rest-api.js"></script>
+  <script src="data/lessons/security.js"></script>
+  <script src="data/lessons/testing.js"></script>
+  <script src="data/lessons/microservices.js"></script>
+  <script src="data/lessons/system-design.js"></script>
+  <script src="data/lessons/devops-git-linux.js"></script>
+  <script src="data/lessons/troubleshooting.js"></script>
+  <!-- Ứng dụng -->
+  <script src="js/ui.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/progress.js"></script>
+  <script src="js/quiz.js"></script>
+  <script src="js/interview.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
